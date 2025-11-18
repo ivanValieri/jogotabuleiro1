@@ -111,7 +111,6 @@ const MultiplayerGame = () => {
   const navigate = useNavigate();
   const isPageVisible = usePageVisibility();
   const channelRef = useRef<any>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const assignMissionsToMissingPlayers = async (playersData: any[]) => {
     try {
@@ -171,11 +170,7 @@ const MultiplayerGame = () => {
     }
 
     const channel = supabase
-      .channel(`game-${roomId}`, {
-        config: {
-          presence: { key: user?.id },
-        },
-      })
+      .channel(`game-${roomId}`)
       .on(
         'postgres_changes',
         {
@@ -210,30 +205,11 @@ const MultiplayerGame = () => {
       .subscribe((status) => {
         console.log('Canal Supabase status:', status);
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Conectado ao canal em tempo real');
           setIsConnected(true);
           setIsReconnecting(false);
-          
-          toast({
-            title: "Conectado! 🟢",
-            description: "Conexão em tempo real estabelecida",
-            duration: 2000,
-          });
         } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          console.error('❌ Erro no canal, tentando reconectar...');
           setIsConnected(false);
-          setIsReconnecting(true);
-          
-          toast({
-            title: "Conexão perdida 🔴",
-            description: "Tentando reconectar...",
-            variant: "destructive",
-          });
-          
-          // Tentar reconectar após 3 segundos
-          reconnectTimeoutRef.current = setTimeout(() => {
-            setupRealtimeChannel();
-          }, 3000);
+          setIsReconnecting(false);
         }
       });
 
@@ -253,9 +229,6 @@ const MultiplayerGame = () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
     };
   }, [user, roomId, navigate]);
 
@@ -264,15 +237,6 @@ const MultiplayerGame = () => {
     if (isPageVisible && user && roomId) {
       console.log('📱 Página ficou visível, recarregando dados...');
       loadGameData();
-      
-      // Verificar se canal ainda está ativo
-      if (channelRef.current) {
-        const channelState = channelRef.current.state;
-        if (channelState !== 'joined') {
-          console.log('🔄 Reconectando canal...');
-          setupRealtimeChannel();
-        }
-      }
     }
   }, [isPageVisible]);
 

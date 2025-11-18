@@ -143,3 +143,5 @@ export const ResourceDialog = ({ isOpen, onClose, player, onPurchase, currentRes
   );
 };
 
+export default ResourceDialog;
+

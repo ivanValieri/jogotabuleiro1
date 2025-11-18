@@ -86,3 +86,5 @@ export const RelicDialog = ({ isOpen, onClose, player, onCollect, currentRelics 
   );
 };
 
+export default RelicDialog;
+

@@ -100,3 +100,5 @@ export const EnergyDialog = ({ isOpen, onClose, player, onActivate, currentEnerg
   );
 };
 
+export default EnergyDialog;
+

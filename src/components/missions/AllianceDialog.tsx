@@ -115,3 +115,5 @@ export const AllianceDialog = ({ isOpen, onClose, player, region, onCollect, col
   );
 };
 
+export default AllianceDialog;
+

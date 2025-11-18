@@ -104,3 +104,4 @@ export const ProphecyDialog = ({ isOpen, onClose, player, onFulfill, currentProp
   );
 };
 
+export default ProphecyDialog;

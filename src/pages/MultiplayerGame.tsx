@@ -166,7 +166,7 @@ const MultiplayerGame = () => {
 
     loadGameData();
 
-    // Configurar tempo real para movimentos do jogo
+    // Configurar tempo real para movimentos do jogo e batalhas
     const channel = supabase
       .channel(`game-${roomId}`)
       .on(
@@ -191,6 +191,13 @@ const MultiplayerGame = () => {
         },
         () => {
           loadGameData();
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'battle_started' },
+        (payload) => {
+          handleBattleBroadcast(payload.payload);
         }
       )
       .subscribe();
@@ -308,6 +315,68 @@ const MultiplayerGame = () => {
   const handleRealtimeMove = (newMove: any) => {
     // Recarregar dados do jogo quando houver um novo movimento
     loadGameData();
+  };
+
+  const handleBattleBroadcast = async (payload: any) => {
+    // Receber notificação de batalha e abrir arena para todos os jogadores
+    const { player1_id, player2_id, player1_name, player2_name } = payload;
+    
+    // Recarregar dados dos jogadores para ter certeza de ter os mais atualizados
+    const { data: playersData } = await supabase
+      .from('game_players')
+      .select(`
+        *,
+        profiles (username, avatar_url)
+      `)
+      .eq('room_id', roomId)
+      .order('turn_order');
+    
+    if (playersData) {
+      const formattedPlayers = playersData.map((player) => ({
+        id: player.turn_order,
+        name: player.profiles?.username || `Jogador ${player.turn_order}`,
+        position: player.position,
+        color: player.color,
+        avatar: player.profiles?.avatar_url || '',
+        player_id: player.player_id,
+        turn_order: player.turn_order,
+        credits: player.credits || 50000,
+        mission_id: player.mission_id,
+        class_id: player.class_id,
+        missionProgress: player.mission_progress || {
+          relics: 0,
+          resources: 0,
+          duelsWon: 0,
+          enigmasSolved: 0,
+          allianceMarks: [],
+          prophecies: 0,
+          energyPoints: 0,
+          enigmaHints: 0,
+          canAnswerEnigma: false,
+          enigmaAnswered: false,
+          hasCompletedLap: false,
+          throneDefended: false,
+          throneBattlesWon: 0,
+        },
+        enigma: player.mission_id === 4 ? getRandomizedEnigma() : undefined,
+        lastBattleWon: false,
+        isOnThrone: false,
+      }));
+      
+      // Encontrar os jogadores
+      const p1 = formattedPlayers.find(p => p.player_id === player1_id);
+      const p2 = formattedPlayers.find(p => p.player_id === player2_id);
+      
+      if (p1 && p2) {
+        setBattlePlayers({ player1: p1, player2: p2 });
+        setShowBattleArena(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `🥊 ${player1_name} vs ${player2_name} - Batalha iniciada!`,
+        });
+      }
+    }
   };
 
   const addGameEvent = (event: Omit<GameEvent, "id" | "timestamp">) => {
@@ -446,6 +515,21 @@ const MultiplayerGame = () => {
         const opponents = players.filter(p => p.id !== activePlayerData.id);
         if (opponents.length > 0) {
           const randomOpponent = opponents[Math.floor(Math.random() * opponents.length)];
+          
+          // Broadcast para todos os jogadores via Supabase Realtime
+          const channel = supabase.channel(`game-${roomId}`);
+          await channel.send({
+            type: 'broadcast',
+            event: 'battle_started',
+            payload: {
+              player1_id: activePlayerData.player_id,
+              player2_id: randomOpponent.player_id,
+              player1_name: activePlayerData.name,
+              player2_name: randomOpponent.name,
+            }
+          });
+          
+          // Abrir arena localmente também
           setBattlePlayers({ player1: activePlayerData, player2: randomOpponent });
           setShowBattleArena(true);
           

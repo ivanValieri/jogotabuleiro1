@@ -195,3 +195,5 @@ export const NormalCellEventDialog = ({
   );
 };
 
+export default NormalCellEventDialog;
+

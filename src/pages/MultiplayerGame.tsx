@@ -8,13 +8,25 @@ import DiceRoller from "@/components/DiceRoller";
 import PlayerPanel from "@/components/PlayerPanel";
 import PlayerMissionPanel from "@/components/PlayerMissionPanel";
 import GameFeed from "@/components/GameFeed";
-import ChallengeDialog from "@/components/ChallengeDialog";
+import BoardLegend from "@/components/BoardLegend";
 import { ShopDialog } from "@/components/ShopDialog";
 import { LifeCardDialog } from "@/components/LifeCardDialog";
+import NormalCellEventDialog from "@/components/NormalCellEvent";
+import BattleArena from "@/components/battles/BattleArena";
+import RelicDialog from "@/components/missions/RelicDialog";
+import ResourceDialog from "@/components/missions/ResourceDialog";
+import EnigmaDialog from "@/components/missions/EnigmaDialog";
+import AllianceDialog from "@/components/missions/AllianceDialog";
+import ProphecyDialog from "@/components/missions/ProphecyDialog";
+import ThroneDialog from "@/components/missions/ThroneDialog";
+import EnergyDialog from "@/components/missions/EnergyDialog";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { ShopItem } from "@/types/shop";
-import { LifeCard, getRandomLifeCard, getLifeCardPositions } from "@/types/lifeCards";
+import { LifeCard, getRandomLifeCard } from "@/types/lifeCards";
+import { MissionProgress } from "@/types/missions";
+import { getCellByPosition, TOTAL_CELLS } from "@/types/boardCells";
+import { Enigma, getRandomizedEnigma, checkEnigmaAnswer } from "@/types/enigmas";
 
 interface Player {
   id: number;
@@ -25,6 +37,13 @@ interface Player {
   player_id: string;
   turn_order: number;
   credits: number;
+  mission_id?: number;
+  class_id?: string;
+  missionProgress: MissionProgress;
+  enigma?: Enigma;
+  lastBattleWon?: boolean;
+  isOnThrone?: boolean;
+  previousPosition?: number;
 }
 
 interface GameEvent {
@@ -60,13 +79,30 @@ const MultiplayerGame = () => {
   });
   const [playerMission, setPlayerMission] = useState<number | undefined>();
   const [playerClass, setPlayerClass] = useState<string | undefined>();
-  const [showChallengeDialog, setShowChallengeDialog] = useState(false);
-  const [challengePosition, setChallengePosition] = useState<number | null>(null);
   const [showShopDialog, setShowShopDialog] = useState(false);
   const [shopPlayer, setShopPlayer] = useState<Player | null>(null);
   const [showLifeCardDialog, setShowLifeCardDialog] = useState(false);
   const [currentLifeCard, setCurrentLifeCard] = useState<LifeCard | null>(null);
   const [lifeCardPlayer, setLifeCardPlayer] = useState<Player | null>(null);
+  const [showNormalEventDialog, setShowNormalEventDialog] = useState(false);
+  const [normalEventPlayer, setNormalEventPlayer] = useState<Player | null>(null);
+  const [showBattleArena, setShowBattleArena] = useState(false);
+  const [battlePlayers, setBattlePlayers] = useState<{ player1: Player; player2: Player } | null>(null);
+  const [showRelicDialog, setShowRelicDialog] = useState(false);
+  const [relicPlayer, setRelicPlayer] = useState<Player | null>(null);
+  const [showResourceDialog, setShowResourceDialog] = useState(false);
+  const [resourcePlayer, setResourcePlayer] = useState<Player | null>(null);
+  const [showEnigmaDialog, setShowEnigmaDialog] = useState(false);
+  const [enigmaPlayer, setEnigmaPlayer] = useState<Player | null>(null);
+  const [showAllianceDialog, setShowAllianceDialog] = useState(false);
+  const [alliancePlayer, setAlliancePlayer] = useState<Player | null>(null);
+  const [allianceRegion, setAllianceRegion] = useState<string>('');
+  const [showProphecyDialog, setShowProphecyDialog] = useState(false);
+  const [prophecyPlayer, setProphecyPlayer] = useState<Player | null>(null);
+  const [showThroneDialog, setShowThroneDialog] = useState(false);
+  const [thronePlayer, setThronePlayer] = useState<Player | null>(null);
+  const [showEnergyDialog, setShowEnergyDialog] = useState(false);
+  const [energyPlayer, setEnergyPlayer] = useState<Player | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -186,7 +222,27 @@ const MultiplayerGame = () => {
         avatar: player.profiles?.avatar_url || '',
         player_id: player.player_id,
         turn_order: player.turn_order,
-        credits: player.credits || 50000
+        credits: player.credits || 50000,
+        mission_id: player.mission_id,
+        class_id: player.class_id,
+        missionProgress: player.mission_progress || {
+          relics: 0,
+          resources: 0,
+          duelsWon: 0,
+          enigmasSolved: 0,
+          allianceMarks: [],
+          prophecies: 0,
+          energyPoints: 0,
+          enigmaHints: 0,
+          canAnswerEnigma: false,
+          enigmaAnswered: false,
+          hasCompletedLap: false,
+          throneDefended: false,
+          throneBattlesWon: 0,
+        },
+        enigma: player.mission_id === 4 ? getRandomizedEnigma() : undefined,
+        lastBattleWon: false,
+        isOnThrone: false,
       }));
 
       setPlayers(formattedPlayers);
@@ -287,15 +343,15 @@ const MultiplayerGame = () => {
       let bonusCredits = 0;
       
       // Verificar se o jogador passou pela casa 1 (posição 0)
-      const passedThroughStart = oldPosition + diceValue >= 30;
+      const passedThroughStart = oldPosition + diceValue >= TOTAL_CELLS;
       if (passedThroughStart) {
         bonusCredits = 150;
       }
       
       // Calcular voltas completas
-      if (newPosition >= 30) {
-        newLaps = Math.floor(newPosition / 30);
-        newPosition = newPosition % 30;
+      if (newPosition >= TOTAL_CELLS) {
+        newLaps = Math.floor(newPosition / TOTAL_CELLS);
+        newPosition = newPosition % TOTAL_CELLS;
       }
       
       const finalPosition = newPosition;
@@ -347,8 +403,8 @@ const MultiplayerGame = () => {
         await new Promise((resolve) => setTimeout(resolve, 300));
         
         let intermediatePosition = oldPosition + step;
-        if (intermediatePosition >= 30) {
-          intermediatePosition = intermediatePosition % 30;
+        if (intermediatePosition >= TOTAL_CELLS) {
+          intermediatePosition = intermediatePosition % TOTAL_CELLS;
         }
         
         setPlayers((prevPlayers) =>
@@ -380,20 +436,25 @@ const MultiplayerGame = () => {
         });
       }
 
-      // Verificar se caiu em casa de desafio
-      const challengeCells = [5, 11, 19, 26];
-      if (challengeCells.includes(finalPosition)) {
-        setChallengePosition(finalPosition);
-        setShowChallengeDialog(true);
-        
-        addGameEvent({
-          type: "system",
-          message: `${activePlayerData.name} caiu numa casa de desafio!`,
-        });
-      }
-      
-      // Verificar se caiu na casa da loja
-      if (finalPosition === 15) {
+      // Verificar tipo da célula usando boardCells.ts
+      const cellData = getCellByPosition(finalPosition);
+      const cellType = cellData?.type || 'normal';
+
+      // Processar célula baseado no tipo
+      if (cellType === 'battle') {
+        // Selecionar oponente aleatório (diferente do jogador atual)
+        const opponents = players.filter(p => p.id !== activePlayerData.id);
+        if (opponents.length > 0) {
+          const randomOpponent = opponents[Math.floor(Math.random() * opponents.length)];
+          setBattlePlayers({ player1: activePlayerData, player2: randomOpponent });
+          setShowBattleArena(true);
+          
+          addGameEvent({
+            type: "system",
+            message: `${activePlayerData.name} iniciou uma batalha contra ${randomOpponent.name}! 🥊`,
+          });
+        }
+      } else if (cellType === 'shop') {
         setShopPlayer(activePlayerData);
         setShowShopDialog(true);
         
@@ -401,11 +462,7 @@ const MultiplayerGame = () => {
           type: "system",
           message: `${activePlayerData.name} chegou à loja! 🏪`,
         });
-      }
-      
-      // Verificar se caiu numa casa de carta da vida
-      const lifeCardPositions = getLifeCardPositions();
-      if (lifeCardPositions.includes(finalPosition) && !challengeCells.includes(finalPosition)) {
+      } else if (cellType === 'life_card') {
         const randomCard = getRandomLifeCard();
         setCurrentLifeCard(randomCard);
         setLifeCardPlayer(activePlayerData);
@@ -415,6 +472,66 @@ const MultiplayerGame = () => {
           type: "system",
           message: `${activePlayerData.name} puxou uma Carta da Vida! 🃏`,
         });
+      } else if (cellType === 'relic') {
+        setRelicPlayer(activePlayerData);
+        setShowRelicDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} encontrou uma relíquia antiga! 🏺`,
+        });
+      } else if (cellType === 'resource') {
+        setResourcePlayer(activePlayerData);
+        setShowResourceDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} chegou ao mercado de recursos! 💎`,
+        });
+      } else if (cellType === 'enigma') {
+        setEnigmaPlayer(activePlayerData);
+        setShowEnigmaDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} encontrou um enigma mágico! 🧩`,
+        });
+      } else if (cellType === 'alliance') {
+        setAlliancePlayer(activePlayerData);
+        setAllianceRegion(cellData?.region || '');
+        setShowAllianceDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} encontrou uma marca de aliança! 🏛️`,
+        });
+      } else if (cellType === 'prophecy') {
+        setProphecyPlayer(activePlayerData);
+        setShowProphecyDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} visitou o santuário da profecia! 🔮`,
+        });
+      } else if (cellType === 'throne') {
+        setThronePlayer(activePlayerData);
+        setShowThroneDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} chegou ao Trono Sagrado! 👑`,
+        });
+      } else if (cellType === 'energy') {
+        setEnergyPlayer(activePlayerData);
+        setShowEnergyDialog(true);
+        
+        addGameEvent({
+          type: "system",
+          message: `${activePlayerData.name} ativou um ponto de energia! ⚡`,
+        });
+      } else if (cellType === 'normal') {
+        setNormalEventPlayer(activePlayerData);
+        setShowNormalEventDialog(true);
       }
 
       setGameStats((prev) => ({
@@ -441,35 +558,65 @@ const MultiplayerGame = () => {
     );
   };
 
-  const handleChallengeBattle = async (opponent: Player, result: any) => {
+  const handleBattleComplete = async (result: { winner: Player; loser: Player; damage: number }) => {
     try {
-      // Atualizar créditos dos jogadores
+      // Atualizar créditos e progresso dos jogadores
+      const winnerReward = 200;
+      const loserPenalty = 100;
+
       const winnerUpdate = supabase
         .from('game_players')
-        .update({ credits: result.winner.credits + result.winnerReward })
+        .update({ 
+          credits: result.winner.credits + winnerReward,
+        })
         .eq('room_id', roomId)
         .eq('player_id', result.winner.player_id);
 
       const loserUpdate = supabase
         .from('game_players')
-        .update({ credits: Math.max(0, result.loser.credits - result.loserPenalty) })
+        .update({ credits: Math.max(0, result.loser.credits - loserPenalty) })
         .eq('room_id', roomId)
         .eq('player_id', result.loser.player_id);
 
       await Promise.all([winnerUpdate, loserUpdate]);
 
+      // Atualizar estado local
+      setPlayers((prev) =>
+        prev.map((p) => {
+          if (p.id === result.winner.id) {
+            const newProgress = { ...p.missionProgress };
+            if (p.mission_id === 3) {
+              newProgress.duelsWon = (newProgress.duelsWon || 0) + 1;
+            }
+            return {
+              ...p,
+              credits: p.credits + winnerReward,
+              missionProgress: newProgress,
+              lastBattleWon: true,
+            };
+          } else if (p.id === result.loser.id) {
+            return {
+              ...p,
+              credits: Math.max(0, p.credits - loserPenalty),
+              lastBattleWon: false,
+            };
+          }
+          return p;
+        })
+      );
+
       // Adicionar evento ao feed
       addGameEvent({
         type: "system",
-        message: `🥊 ${result.winner.name} venceu a batalha contra ${result.loser.name}! (+${result.winnerReward}/-${result.loserPenalty} créditos)`,
+        message: `🥊 ${result.winner.name} venceu a batalha! (+${winnerReward}/-${loserPenalty} créditos)`,
       });
 
       toast({
         title: "Batalha Finalizada!",
-        description: `${result.winner.name} venceu e recebeu ${result.winnerReward} créditos!`,
+        description: `${result.winner.name} venceu e recebeu ${winnerReward} créditos!`,
       });
 
-      // Recarregar dados do jogo
+      setShowBattleArena(false);
       loadGameData();
     } catch (error: any) {
       toast({
@@ -478,6 +625,197 @@ const MultiplayerGame = () => {
         variant: "destructive"
       });
     }
+  };
+
+  const handleNormalEventComplete = async (creditChange: number) => {
+    if (!normalEventPlayer) return;
+
+    try {
+      const newCredits = Math.max(0, normalEventPlayer.credits + creditChange);
+      
+      await supabase
+        .from('game_players')
+        .update({ credits: newCredits })
+        .eq('room_id', roomId)
+        .eq('player_id', normalEventPlayer.player_id);
+
+      loadGameData();
+      setShowNormalEventDialog(false);
+    } catch (error: any) {
+      toast({
+        title: "Erro no evento",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Handlers para Missões
+  const handleRelicCollect = () => {
+    if (!relicPlayer || relicPlayer.mission_id !== 1) {
+      setShowRelicDialog(false);
+      return;
+    }
+
+    setPlayers(prev => prev.map(p => 
+      p.id === relicPlayer.id 
+        ? { ...p, missionProgress: { ...p.missionProgress, relics: (p.missionProgress.relics || 0) + 1 } }
+        : p
+    ));
+
+    addGameEvent({
+      type: "system",
+      message: `${relicPlayer.name} coletou uma relíquia! (${(relicPlayer.missionProgress.relics || 0) + 1}/3)`,
+    });
+
+    setShowRelicDialog(false);
+  };
+
+  const handleResourcePurchase = (resourceType: string, cost: number) => {
+    if (!resourcePlayer || resourcePlayer.mission_id !== 2) {
+      setShowResourceDialog(false);
+      return;
+    }
+
+    if (resourcePlayer.credits < cost) {
+      toast({
+        title: "Créditos Insuficientes",
+        description: "Você não tem créditos suficientes!",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPlayers(prev => prev.map(p => 
+      p.id === resourcePlayer.id 
+        ? { 
+            ...p, 
+            credits: p.credits - cost,
+            missionProgress: { ...p.missionProgress, resources: (p.missionProgress.resources || 0) + 1 } 
+          }
+        : p
+    ));
+
+    addGameEvent({
+      type: "system",
+      message: `${resourcePlayer.name} comprou ${resourceType}! (${(resourcePlayer.missionProgress.resources || 0) + 1}/12)`,
+    });
+
+    setShowResourceDialog(false);
+  };
+
+  const handleEnigmaHint = () => {
+    if (!enigmaPlayer || enigmaPlayer.mission_id !== 4) {
+      setShowEnigmaDialog(false);
+      return;
+    }
+
+    setPlayers(prev => prev.map(p => 
+      p.id === enigmaPlayer.id 
+        ? { ...p, missionProgress: { ...p.missionProgress, enigmaHints: (p.missionProgress.enigmaHints || 0) + 1 } }
+        : p
+    ));
+
+    addGameEvent({
+      type: "system",
+      message: `${enigmaPlayer.name} recebeu uma dica do enigma! (${(enigmaPlayer.missionProgress.enigmaHints || 0) + 1}/5)`,
+    });
+
+    setShowEnigmaDialog(false);
+  };
+
+  const handleEnigmaAnswer = (answerId: string) => {
+    if (!enigmaPlayer || !enigmaPlayer.enigma) return;
+
+    const isCorrect = checkEnigmaAnswer(enigmaPlayer.enigma, answerId);
+    
+    if (isCorrect) {
+      addGameEvent({
+        type: "system",
+        message: `🎉 ${enigmaPlayer.name} respondeu o enigma corretamente e venceu o jogo!`,
+      });
+      
+      toast({
+        title: "Vitória!",
+        description: "Você respondeu o enigma corretamente!",
+      });
+    } else {
+      addGameEvent({
+        type: "system",
+        message: `❌ ${enigmaPlayer.name} errou o enigma e foi eliminado do jogo!`,
+      });
+      
+      toast({
+        title: "Eliminado!",
+        description: "Resposta incorreta! Você foi eliminado.",
+        variant: "destructive",
+      });
+    }
+
+    setShowEnigmaDialog(false);
+  };
+
+  const handleAllianceCollect = () => {
+    if (!alliancePlayer || alliancePlayer.mission_id !== 5) {
+      setShowAllianceDialog(false);
+      return;
+    }
+
+    const marks = alliancePlayer.missionProgress.allianceMarks || [];
+    if (!marks.includes(allianceRegion)) {
+      setPlayers(prev => prev.map(p => 
+        p.id === alliancePlayer.id 
+          ? { ...p, missionProgress: { ...p.missionProgress, allianceMarks: [...marks, allianceRegion] } }
+          : p
+      ));
+
+      addGameEvent({
+        type: "system",
+        message: `${alliancePlayer.name} formou aliança na região ${allianceRegion}! (${marks.length + 1}/4)`,
+      });
+    }
+
+    setShowAllianceDialog(false);
+  };
+
+  const handleProphecyFulfill = () => {
+    if (!prophecyPlayer || prophecyPlayer.mission_id !== 6) {
+      setShowProphecyDialog(false);
+      return;
+    }
+
+    setPlayers(prev => prev.map(p => 
+      p.id === prophecyPlayer.id 
+        ? { ...p, missionProgress: { ...p.missionProgress, prophecies: (p.missionProgress.prophecies || 0) + 1 } }
+        : p
+    ));
+
+    addGameEvent({
+      type: "system",
+      message: `${prophecyPlayer.name} cumpriu uma profecia! (${(prophecyPlayer.missionProgress.prophecies || 0) + 1}/3)`,
+    });
+
+    setShowProphecyDialog(false);
+  };
+
+  const handleEnergyActivate = () => {
+    if (!energyPlayer || energyPlayer.mission_id !== 8) {
+      setShowEnergyDialog(false);
+      return;
+    }
+
+    setPlayers(prev => prev.map(p => 
+      p.id === energyPlayer.id 
+        ? { ...p, missionProgress: { ...p.missionProgress, energyPoints: (p.missionProgress.energyPoints || 0) + 1 } }
+        : p
+    ));
+
+    addGameEvent({
+      type: "system",
+      message: `${energyPlayer.name} ativou um ponto de energia! (${(energyPlayer.missionProgress.energyPoints || 0) + 1}/5)`,
+    });
+
+    setShowEnergyDialog(false);
   };
 
   const handleShopPurchase = async (item: ShopItem) => {
@@ -634,6 +972,7 @@ const MultiplayerGame = () => {
               currentPlayer={currentPlayer}
               gameStats={gameStats}
             />
+            <BoardLegend />
           </div>
           
           <div className="space-y-6">
@@ -645,14 +984,97 @@ const MultiplayerGame = () => {
           </div>
         </div>
 
-        {/* Challenge Dialog */}
-        {challengerPlayer && (
-          <ChallengeDialog
-            isOpen={showChallengeDialog}
-            onClose={() => setShowChallengeDialog(false)}
-            challenger={challengerPlayer}
-            availablePlayers={availableOpponents}
-            onBattle={handleChallengeBattle}
+        {/* Battle Arena */}
+        {battlePlayers && (
+          <BattleArena
+            isOpen={showBattleArena}
+            onClose={() => setShowBattleArena(false)}
+            player1={battlePlayers.player1}
+            player2={battlePlayers.player2}
+            onComplete={handleBattleComplete}
+          />
+        )}
+
+        {/* Normal Cell Event Dialog */}
+        {normalEventPlayer && (
+          <NormalCellEventDialog
+            isOpen={showNormalEventDialog}
+            onClose={() => setShowNormalEventDialog(false)}
+            player={normalEventPlayer}
+            onComplete={handleNormalEventComplete}
+          />
+        )}
+
+        {/* Relic Dialog */}
+        {relicPlayer && (
+          <RelicDialog
+            isOpen={showRelicDialog}
+            onClose={() => setShowRelicDialog(false)}
+            player={relicPlayer}
+            onCollect={handleRelicCollect}
+          />
+        )}
+
+        {/* Resource Dialog */}
+        {resourcePlayer && (
+          <ResourceDialog
+            isOpen={showResourceDialog}
+            onClose={() => setShowResourceDialog(false)}
+            player={resourcePlayer}
+            onPurchase={handleResourcePurchase}
+          />
+        )}
+
+        {/* Enigma Dialog */}
+        {enigmaPlayer && enigmaPlayer.enigma && (
+          <EnigmaDialog
+            isOpen={showEnigmaDialog}
+            onClose={() => setShowEnigmaDialog(false)}
+            player={enigmaPlayer}
+            enigma={enigmaPlayer.enigma}
+            onHint={handleEnigmaHint}
+            onAnswer={handleEnigmaAnswer}
+          />
+        )}
+
+        {/* Alliance Dialog */}
+        {alliancePlayer && (
+          <AllianceDialog
+            isOpen={showAllianceDialog}
+            onClose={() => setShowAllianceDialog(false)}
+            player={alliancePlayer}
+            region={allianceRegion}
+            onCollect={handleAllianceCollect}
+          />
+        )}
+
+        {/* Prophecy Dialog */}
+        {prophecyPlayer && (
+          <ProphecyDialog
+            isOpen={showProphecyDialog}
+            onClose={() => setShowProphecyDialog(false)}
+            player={prophecyPlayer}
+            onFulfill={handleProphecyFulfill}
+          />
+        )}
+
+        {/* Throne Dialog */}
+        {thronePlayer && (
+          <ThroneDialog
+            isOpen={showThroneDialog}
+            onClose={() => setShowThroneDialog(false)}
+            player={thronePlayer}
+            availablePlayers={players.filter(p => p.id !== thronePlayer.id)}
+          />
+        )}
+
+        {/* Energy Dialog */}
+        {energyPlayer && (
+          <EnergyDialog
+            isOpen={showEnergyDialog}
+            onClose={() => setShowEnergyDialog(false)}
+            player={energyPlayer}
+            onActivate={handleEnergyActivate}
           />
         )}
 
